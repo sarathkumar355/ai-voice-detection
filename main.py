@@ -4,6 +4,9 @@ import requests, librosa, numpy as np, tempfile, os
 API_KEY = "my_secret_key"
 
 app = FastAPI()
+@app.get("/")
+def root():
+    return {"status": "API running"}
 
 @app.post("/detect-voice")
 def detect_voice(
