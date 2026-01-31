@@ -8,6 +8,10 @@ app = FastAPI()
 def root():
     return {"status": "API running"}
 
+@app.head("/")
+def root_head():
+    return
+
 @app.post("/detect-voice")
 def detect_voice(
     payload: dict,
@@ -49,3 +53,4 @@ def detect_voice(
         "language": "Unknown",
         "explanation": "Decision based on spectral and MFCC patterns"
     }
+
