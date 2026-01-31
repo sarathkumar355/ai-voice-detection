@@ -1,23 +1,33 @@
 from fastapi import FastAPI, Header, HTTPException
-import requests, librosa, numpy as np, tempfile, os
+import requests
+import librosa
+import numpy as np
+import tempfile
+import os
 
+# =====================
+# CONFIG
+# =====================
 API_KEY = "my_secret_key"
 
 app = FastAPI()
-@app.get("/")
+
+# =====================
+# ROOT ROUTE (RENDER HEALTH CHECK FIX)
+# =====================
+@app.api_route("/", methods=["GET", "HEAD"])
 def root():
     return {"status": "API running"}
 
-@app.head("/")
-def root_head():
-    return
-
+# =====================
+# VOICE DETECTION API
+# =====================
 @app.post("/detect-voice")
 def detect_voice(
     payload: dict,
     authorization: str = Header(None)
 ):
-    # Auth check
+    # ---- Auth check ----
     if authorization != f"Bearer {API_KEY}":
         raise HTTPException(status_code=401, detail="Invalid API Key")
 
@@ -25,27 +35,38 @@ def detect_voice(
     if not audio_url:
         raise HTTPException(status_code=400, detail="audio_file_url missing")
 
-    # Download audio
-    r = requests.get(audio_url)
+    # ---- Download audio ----
+    try:
+        response = requests.get(audio_url, timeout=10)
+        response.raise_for_status()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Unable to download audio")
+
+    # ---- Save temp file ----
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
-    tmp.write(r.content)
+    tmp.write(response.content)
     tmp.close()
 
-    # Load audio
-    y, sr = librosa.load(tmp.name, sr=None)
+    # ---- Load audio ----
+    try:
+        y, sr = librosa.load(tmp.name, sr=None)
+    except Exception:
+        os.unlink(tmp.name)
+        raise HTTPException(status_code=400, detail="Invalid audio file")
+
     os.unlink(tmp.name)
 
-    # Feature extraction (simple & safe)
+    # ---- Feature extraction ----
     mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13)
-    score = np.mean(mfcc)
+    score = abs(np.mean(mfcc))
 
-    # Simple logic (NOT hard-coded output)
-    if score < -200:
+    # ---- Simple rule-based decision ----
+    confidence = min(score / 300, 1.0)
+
+    if score > 180:
         classification = "AI_GENERATED"
-        confidence = 0.85
     else:
         classification = "HUMAN"
-        confidence = 0.75
 
     return {
         "classification": classification,
@@ -53,4 +74,3 @@ def detect_voice(
         "language": "Unknown",
         "explanation": "Decision based on spectral and MFCC patterns"
     }
-
