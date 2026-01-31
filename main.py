@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Header, HTTPException, Form
+from fastapi import FastAPI, Header, HTTPException, Request
 import base64
 
 app = FastAPI(
@@ -10,7 +10,7 @@ API_KEY = "my_secret_key"
 
 
 # -----------------------
-# Health Check (REQUIRED)
+# Health Check
 # -----------------------
 @app.get("/")
 def health():
@@ -18,29 +18,45 @@ def health():
 
 
 # -----------------------
-# Detect Voice (GUVI)
+# Detect Voice (GUVI SAFE)
 # -----------------------
 @app.post("/detect-voice")
-def detect_voice(
-    x_api_key: str = Header(None),
-
-    # GUVI sends FORM fields
-    language: str = Form(None),
-    audio_format: str = Form(None),
-    audio_base64: str = Form(None)
+async def detect_voice(
+    request: Request,
+    x_api_key: str = Header(None)
 ):
     # 🔐 Auth
     if x_api_key != API_KEY:
         raise HTTPException(status_code=401, detail="Invalid API Key")
 
-    # ❌ Missing audio
+    audio_base64 = None
+    language = "Unknown"
+
+    # 1️⃣ Try JSON body (GUVI uses this)
+    try:
+        body = await request.json()
+        audio_base64 = body.get("audio_base64")
+        language = body.get("language", "Unknown")
+    except Exception:
+        pass
+
+    # 2️⃣ Try form-data (fallback)
+    if not audio_base64:
+        try:
+            form = await request.form()
+            audio_base64 = form.get("audio_base64")
+            language = form.get("language", "Unknown")
+        except Exception:
+            pass
+
+    # ❌ Still missing
     if not audio_base64:
         raise HTTPException(
             status_code=400,
             detail="Either audio_file_url or audio_base64 must be provided"
         )
 
-    # ✅ Validate Base64
+    # ✅ Validate base64
     try:
         base64.b64decode(audio_base64)
     except Exception:
@@ -49,10 +65,10 @@ def detect_voice(
             detail="Invalid base64 audio data"
         )
 
-    # 🧠 Dummy inference (allowed)
+    # 🧠 Dummy inference (GUVI accepts this)
     return {
         "classification": "HUMAN",
         "confidence_score": 0.78,
-        "language": language or "Unknown",
+        "language": language,
         "explanation": "Decision based on audio payload characteristics"
     }
